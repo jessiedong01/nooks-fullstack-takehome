@@ -1,5 +1,6 @@
 import { Box, createTheme, CssBaseline, ThemeProvider } from "@mui/material";
 import { Routes, Route } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
 import WatchSession from "./routes/WatchSession";
 import CreateSession from "./routes/CreateSession";
 
@@ -22,6 +23,7 @@ const App = () => {
         justifyContent="center"
         gap={1}
       >
+        <Toaster position="bottom-center" />
         <Routes>
           <Route path="/" element={<CreateSession />} />
           <Route path="/create" element={<CreateSession />} />

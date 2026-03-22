@@ -1,108 +1,183 @@
-import { Box, Button } from "@mui/material";
-import React, { useRef, useState } from "react";
+import { Box, Button, IconButton, Slider } from "@mui/material";
+import PauseIcon from "@mui/icons-material/Pause";
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import React, { useEffect, useRef, useState } from "react";
 import ReactPlayer from "react-player";
+
+export interface RemoteCommand {
+  type: "PLAY" | "PAUSE" | "SEEK";
+  currentTime: number;
+}
 
 interface VideoPlayerProps {
   url: string;
-  hideControls?: boolean;
+  onPlay?: (currentTime: number) => void;
+  onPause?: (currentTime: number) => void;
+  onSeek?: (currentTime: number) => void;
+  onBuffer?: (currentTime: number) => void;
+  onBufferEnd?: (currentTime: number) => void;
+  remoteCommand?: RemoteCommand | null;
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ url, hideControls }) => {
+const VideoPlayer: React.FC<VideoPlayerProps> = ({
+  url,
+  onPlay,
+  onPause,
+  onSeek,
+  onBuffer,
+  onBufferEnd,
+  remoteCommand,
+}) => {
   const [hasJoined, setHasJoined] = useState(false);
   const [isReady, setIsReady] = useState(false);
-  const player = useRef<ReactPlayer>(null);
+  const [playing, setPlaying] = useState(false);
+  const [duration, setDuration] = useState(0);
+  const [sliderValue, setSliderValue] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
 
-  const handleReady = () => {
-    setIsReady(true);
-  };
+  const playerRef = useRef<ReactPlayer>(null);
+  // Set to true before applying a remote command; suppresses the resulting play/pause callback
+  const suppressNextEvent = useRef(false);
 
-  const handleEnd = () => {
-    console.log("Video ended");
-  };
+  // Apply incoming remote commands
+  useEffect(() => {
+    if (!remoteCommand || !playerRef.current || !hasJoined) return;
 
-  const handleSeek = (seconds: number) => {
-    // Ideally, the seek event would be fired whenever the user moves the built in Youtube video slider to a new timestamp.
-    // However, the youtube API no longer supports seek events (https://github.com/cookpete/react-player/issues/356), so this no longer works
+    if (remoteCommand.type === "PLAY") {
+      suppressNextEvent.current = true;
+      playerRef.current.seekTo(remoteCommand.currentTime, "seconds");
+      setSliderValue(remoteCommand.currentTime);
+      setPlaying(true);
+    } else if (remoteCommand.type === "PAUSE") {
+      suppressNextEvent.current = true;
+      playerRef.current.seekTo(remoteCommand.currentTime, "seconds");
+      setSliderValue(remoteCommand.currentTime);
+      setPlaying(false);
+    } else if (remoteCommand.type === "SEEK") {
+      // SEEK doesn't trigger a play/pause event — no suppression needed
+      playerRef.current.seekTo(remoteCommand.currentTime, "seconds");
+      setSliderValue(remoteCommand.currentTime);
+    }
+  }, [remoteCommand]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // You'll need to find a different way to detect seeks (or just write your own seek slider and replace the built in Youtube one.)
-    // Note that when you move the slider, you still get play, pause, buffer, and progress events, can you use those?
-
-    console.log(
-      "This never prints because seek decetion doesn't work: ",
-      seconds
-    );
-  };
+  const handleReady = () => setIsReady(true);
+  const handleDuration = (d: number) => setDuration(d);
 
   const handlePlay = () => {
-    console.log(
-      "User played video at time: ",
-      player.current?.getCurrentTime()
-    );
+    if (suppressNextEvent.current) {
+      suppressNextEvent.current = false;
+      return;
+    }
+    onPlay?.(playerRef.current?.getCurrentTime() ?? 0);
   };
 
   const handlePause = () => {
-    console.log(
-      "User paused video at time: ",
-      player.current?.getCurrentTime()
-    );
+    if (suppressNextEvent.current) {
+      suppressNextEvent.current = false;
+      return;
+    }
+    onPause?.(playerRef.current?.getCurrentTime() ?? 0);
+  };
+
+  const handleProgress = ({ playedSeconds }: { playedSeconds: number }) => {
+    if (!isDragging) setSliderValue(playedSeconds);
   };
 
   const handleBuffer = () => {
-    console.log("Video buffered");
+    onBuffer?.(playerRef.current?.getCurrentTime() ?? 0);
   };
 
-  const handleProgress = (state: {
-    played: number;
-    playedSeconds: number;
-    loaded: number;
-    loadedSeconds: number;
-  }) => {
-    console.log("Video progress: ", state);
+  const handleBufferEnd = () => {
+    onBufferEnd?.(playerRef.current?.getCurrentTime() ?? 0);
+  };
+
+  const togglePlayPause = () => {
+    const currentTime = playerRef.current?.getCurrentTime() ?? 0;
+    if (playing) {
+      setPlaying(false);
+      onPause?.(currentTime);
+    } else {
+      setPlaying(true);
+      onPlay?.(currentTime);
+    }
+  };
+
+  const handleSliderChange = (_: Event, value: number | number[]) => {
+    setIsDragging(true);
+    setSliderValue(value as number);
+  };
+
+  const handleSliderCommit = (_: React.SyntheticEvent | Event, value: number | number[]) => {
+    const time = value as number;
+    setIsDragging(false);
+    playerRef.current?.seekTo(time, "seconds");
+    setSliderValue(time);
+    onSeek?.(time);
   };
 
   return (
-    <Box
-      width="100%"
-      height="100%"
-      display="flex"
-      alignItems="center"
-      justifyContent="center"
-      flexDirection="column"
-    >
-      <Box
-        width="100%"
-        height="100%"
-        display={hasJoined ? "flex" : "none"}
-        flexDirection="column"
-      >
+    <Box width="100%" height="100%" display="flex" flexDirection="column">
+      {/* Player is always in the DOM so onReady fires; visually hidden until the user joins */}
+      <Box flexGrow={1} sx={{ visibility: hasJoined ? "visible" : "hidden" }}>
         <ReactPlayer
-          ref={player}
+          ref={playerRef}
           url={url}
-          playing={hasJoined}
-          controls={!hideControls}
+          playing={playing}
+          controls={false}
           onReady={handleReady}
-          onEnded={handleEnd}
-          onSeek={handleSeek}
+          onDuration={handleDuration}
           onPlay={handlePlay}
           onPause={handlePause}
-          onBuffer={handleBuffer}
           onProgress={handleProgress}
+          onBuffer={handleBuffer}
+          onBufferEnd={handleBufferEnd}
+          progressInterval={500}
           width="100%"
           height="100%"
-          style={{ pointerEvents: hideControls ? "none" : "auto" }}
+          style={{ pointerEvents: "none" }}
         />
       </Box>
+
+      {/* Custom controls — shown after joining */}
+      {hasJoined && (
+        <Box display="flex" alignItems="center" gap={1} px={1} py={0.5}>
+          <IconButton onClick={togglePlayPause} size="small" color="primary">
+            {playing ? <PauseIcon /> : <PlayArrowIcon />}
+          </IconButton>
+          <Slider
+            min={0}
+            max={duration || 1}
+            step={0.1}
+            value={sliderValue}
+            onChange={handleSliderChange}
+            onChangeCommitted={handleSliderCommit}
+            size="small"
+            sx={{ color: "primary.main" }}
+          />
+        </Box>
+      )}
+
+      {/* Join gate — required for YouTube autoplay policy */}
       {!hasJoined && isReady && (
-        // Youtube doesn't allow autoplay unless you've interacted with the page already
-        // So we make the user click "Join Session" button and then start playing the video immediately after
-        // This is necessary so that when people join a session, they can seek to the same timestamp and start watching the video with everyone else
-        <Button
-          variant="contained"
-          size="large"
-          onClick={() => setHasJoined(true)}
+        <Box
+          position="absolute"
+          display="flex"
+          alignItems="center"
+          justifyContent="center"
+          width="100%"
+          height="100%"
         >
-          Watch Session
-        </Button>
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => {
+              setHasJoined(true);
+              setPlaying(true);
+            }}
+          >
+            Watch Session
+          </Button>
+        </Box>
       )}
     </Box>
   );

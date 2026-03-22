@@ -1,34 +1,55 @@
 import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { Box, Button, TextField } from "@mui/material";
-import { v4 as uuidv4 } from "uuid";
+import { useNavigate } from "react-router-dom";
+import { Alert, Box, Button, CircularProgress, TextField } from "@mui/material";
+import { createSession } from "../hooks/useWatchParty";
 
 const CreateSession: React.FC = () => {
   const navigate = useNavigate();
-  const [newUrl, setNewUrl] = useState("");
+  const [name, setName] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const createSession = async () => {
-    setNewUrl("");
-    const sessionId = uuidv4();
-    navigate(`/watch/${sessionId}`);
+  const handleSubmit = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const sessionId = await createSession(name, videoUrl);
+      navigate(`/watch/${sessionId}`);
+    } catch (e: any) {
+      setError(e?.message ?? "Failed to create session. Please try again.");
+      setLoading(false);
+    }
   };
 
+  const isValid = name.trim() !== "" && videoUrl.trim() !== "";
+
   return (
-    <Box width="100%" maxWidth={600} display="flex" gap={1} marginTop={1}>
+    <Box width="100%" maxWidth={600} display="flex" flexDirection="column" gap={2} marginTop={2}>
+      {error && <Alert severity="error">{error}</Alert>}
       <TextField
-        label="Youtube URL"
+        label="Session Name"
         variant="outlined"
-        value={newUrl}
-        onChange={(e) => setNewUrl(e.target.value)}
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        disabled={loading}
+        fullWidth
+      />
+      <TextField
+        label="YouTube URL"
+        variant="outlined"
+        value={videoUrl}
+        onChange={(e) => setVideoUrl(e.target.value)}
+        disabled={loading}
         fullWidth
       />
       <Button
-        disabled={!newUrl}
-        onClick={createSession}
-        size="small"
+        disabled={!isValid || loading}
+        onClick={handleSubmit}
         variant="contained"
+        startIcon={loading ? <CircularProgress size={16} color="inherit" /> : null}
       >
-        Create a session
+        {loading ? "Creating…" : "Create Session"}
       </Button>
     </Box>
   );
